@@ -283,3 +283,8 @@ def main():
         instructions_page()
     elif page == "⚙️ Settings":
         settings_page()
+
+# Add this to the very end of your file
+if __name__ == "__main__":
+    main()
+

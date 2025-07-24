@@ -9,7 +9,7 @@ from streamlit_local_storage import LocalStorage
 import requests
 
 # Load logo if available
-LOGO_PATH = "assets/logo.png"  # You can change this to a URL too
+LOGO_PATH = "ChatGPT Image Jul 24, 2025 at 02_46_10 PM.png"  # You can change this to a URL too
 
 DEFAULT_INSTRUCTIONS = """You are a cannabis industry research assistant powered by Perplexity AI tools. Your role is to help report on strain-specific data points. You will be provided with the name of a cannabis strain. Your task is to return a structured report containing 14 specific data fields, all in plain text Markdown format, as outlined below.
 

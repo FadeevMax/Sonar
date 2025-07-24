@@ -243,8 +243,8 @@ def main():
     localS = LocalStorage()
     localS.sync()
     if not localS.ready():
-    st.warning("Initializing browser session...")
-    st.stop()
+      st.warning("Initializing browser session...")
+      st.stop()
     # Get or generate persistent user_id
     if not st.session_state.get("user_id"):
         st.session_state.user_id = get_persistent_user_id(localS)

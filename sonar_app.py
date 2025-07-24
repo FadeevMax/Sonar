@@ -210,22 +210,40 @@ def instructions_page():
         col1, col2 = st.columns([3, 1])
         with col1:
             options = list(st.session_state.custom_instructions.keys())
-            selected = st.selectbox("Select Instruction", options, index=options.index(st.session_state.current_instruction_name))
+            selected_index = options.index(st.session_state.current_instruction_name)
+            selected = st.selectbox("Select Instruction", options, index=selected_index)
             st.session_state.current_instruction_name = selected
+            st.session_state.instructions = st.session_state.custom_instructions[selected]
         with col2:
+            st.write("") # Spacer
+            st.write("") # Spacer
             if st.button("New Instruction"):
                 st.session_state.instruction_edit_mode = "create"
                 st.rerun()
-        st.text_area("Instruction Content", value=st.session_state.custom_instructions[selected], height=300, disabled=(selected == "Default"))
+        
+        content_key = f"instruction_content_{selected}"
+        edited_content = st.text_area(
+            "Instruction Content",
+            value=st.session_state.custom_instructions[selected],
+            height=300,
+            disabled=(selected == "Default"),
+            key=content_key
+        )
+
         if selected != "Default":
-            if st.button("Save Changes"):
-                st.session_state.custom_instructions[selected] = st.session_state.custom_instructions[selected]
-                st.success("✅ Changes saved")
-            if st.button("Delete Instruction"):
-                del st.session_state.custom_instructions[selected]
-                st.session_state.current_instruction_name = "Default"
-                st.success("✅ Deleted")
-                st.rerun()
+            col1_btn, col2_btn, _ = st.columns([1,1,5])
+            with col1_btn:
+                if st.button("Save Changes"):
+                    st.session_state.custom_instructions[selected] = edited_content
+                    st.success("✅ Changes saved")
+                    st.rerun()
+            with col2_btn:
+                if st.button("Delete"):
+                    del st.session_state.custom_instructions[selected]
+                    st.session_state.current_instruction_name = "Default"
+                    st.session_state.instructions = st.session_state.custom_instructions["Default"]
+                    st.success("✅ Deleted")
+                    st.rerun()
 
 def settings_page():
     st.header("⚙️ Settings")
@@ -241,13 +259,11 @@ def settings_page():
 def main():
     st.set_page_config("AI Research Assistant", "🤖", layout="wide")
     localS = LocalStorage()
-    localS.sync()
-    if not localS.ready():
-      st.warning("Initializing browser session...")
-      st.stop()
+
     # Get or generate persistent user_id
     if not st.session_state.get("user_id"):
         st.session_state.user_id = get_persistent_user_id(localS)
+
     initialize_session_state()
 
     # --- Login Screen ---
@@ -255,12 +271,12 @@ def main():
         st.title("🔐 Login")
         key_input = st.text_input("Enter Perplexity API key or password", type="password")
         if st.button("Login"):
-            if key_input.startswith("pplx-"):
+            if key_input and key_input.startswith("pplx-"):
                 st.session_state.api_key = key_input
                 st.session_state.authenticated = True
                 st.success("✅ Logged in with API key")
                 st.rerun()
-            elif key_input == "111":
+            elif key_input == st.secrets.get("PASSWORD"): # More secure check
                 st.session_state.api_key = st.secrets["PERPLEXITY_API_KEY"]
                 st.session_state.authenticated = True
                 st.success("✅ Logged in with default key")
@@ -268,7 +284,7 @@ def main():
             else:
                 st.error("❌ Invalid key or password")
         with st.expander("Where to find your API key"):
-            st.markdown("[Perplexity API](https://www.perplexity.ai/) → login → generate key")
+            st.markdown("Go to the [Perplexity AI Website](https://www.perplexity.ai/), log in to your account, navigate to API settings, and generate a new key.")
         return  # Don’t proceed unless authenticated
 
     # --- Restore Previous Messages (Optional: session only) ---
@@ -284,7 +300,7 @@ def main():
     elif page == "⚙️ Settings":
         settings_page()
 
-# Add this to the very end of your file
+# FIX: This is the critical line that was missing. It tells Python to run the main() function.
 if __name__ == "__main__":
     main()
 

@@ -229,7 +229,41 @@ def settings_page():
             conv["messages"] = []
             _save_conversations(LocalStorage(), st.session_state.conversations)
             st.rerun()
+def login_form():
+    """
+    Presents a single password field.
+    • If the input starts with 'pplx-' → treat as Perplexity API key.
+    • Else, if it matches st.secrets['PASSWORD'] → use the default
+      key from st.secrets['PERPLEXITY_API_KEY'].
+    Sets st.session_state.authenticated + .api_key on success.
+    """
+    st.subheader("🔐 Login")
+    cred = st.text_input(
+        "Enter Perplexity API key *or* password", type="password"
+    )
 
+    if st.button("Login"):
+        # 1️⃣ Direct API‑key path
+        if cred and cred.startswith("pplx-"):
+            st.session_state.api_key = cred
+            st.session_state.authenticated = True
+            st.success("✅ Logged in with API key")
+            st.rerun()
+
+        # 2️⃣ Password → fallback key path
+        elif cred and cred == st.secrets.get("PASSWORD"):
+            default_key = st.secrets.get("PERPLEXITY_API_KEY")
+            if default_key:
+                st.session_state.api_key = default_key
+                st.session_state.authenticated = True
+                st.success("✅ Logged in with default key")
+                st.rerun()
+            else:
+                st.error("Default API key missing in `st.secrets`")
+
+        # 3️⃣ Invalid input
+        else:
+            st.error("❌ Invalid key or password")
 # ------------------------------------------------------------
 # 🚀  MAIN
 # ------------------------------------------------------------
@@ -250,14 +284,7 @@ def main():
     with st.sidebar:
         if not st.session_state.authenticated:
             st.subheader("🔐 Login")
-            pw = st.text_input("Enter Perplexity API key", type="password")
-            if st.button("Login"):
-                if pw and pw.startswith("pplx-"):
-                    st.session_state.api_key = pw
-                    st.session_state.authenticated = True
-                    st.rerun()
-                else:
-                    st.error("Invalid key – must start with 'pplx-' 🛑")
+            login_form()     # …and call the helper here
             st.stop()
 
         sidebar_conversations(localS)

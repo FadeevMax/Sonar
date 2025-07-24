@@ -283,7 +283,6 @@ def main():
     # --- Sidebar content (login & conv list) ---
     with st.sidebar:
         if not st.session_state.authenticated:
-            st.subheader("🔐 Login")
             login_form()     # …and call the helper here
             st.stop()
 

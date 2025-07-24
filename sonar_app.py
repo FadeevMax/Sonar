@@ -126,6 +126,7 @@ def get_persistent_user_id(local_storage):
 def initialize_session_state():
     defaults = {
         "authenticated": False,
+        "api_key": None,
         "custom_instructions": {"Default": DEFAULT_INSTRUCTIONS},
         "current_instruction_name": "Default",
         "state_loaded": True,
@@ -134,6 +135,7 @@ def initialize_session_state():
         "messages": [],
         "instruction_edit_mode": "view",
         "sidebar_expanded": True,
+        "user_id": None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -239,24 +241,39 @@ def settings_page():
 def main():
     st.set_page_config("AI Research Assistant", "🤖", layout="wide")
     localS = LocalStorage()
-    st.session_state.user_id = get_persistent_user_id(localS)
+
+    # Get or generate persistent user_id
+    if not st.session_state.get("user_id"):
+        st.session_state.user_id = get_persistent_user_id(localS)
+
     initialize_session_state()
 
+    # --- Login Screen ---
     if not st.session_state.authenticated:
         st.title("🔐 Login")
-        key = st.text_input("Perplexity API Key", type="password")
+        key_input = st.text_input("Enter Perplexity API key or password", type="password")
         if st.button("Login"):
-            if key.startswith("pplx-"):
-                st.session_state.api_key = key
+            if key_input.startswith("pplx-"):
+                st.session_state.api_key = key_input
                 st.session_state.authenticated = True
-                st.success("✅ Authenticated")
+                st.success("✅ Logged in with API key")
+                st.rerun()
+            elif key_input == "111":
+                st.session_state.api_key = st.secrets["PERPLEXITY_API_KEY"]
+                st.session_state.authenticated = True
+                st.success("✅ Logged in with default key")
                 st.rerun()
             else:
-                st.error("❌ Invalid API key")
+                st.error("❌ Invalid key or password")
         with st.expander("Where to find your API key"):
             st.markdown("[Perplexity API](https://www.perplexity.ai/) → login → generate key")
-        return
+        return  # Don’t proceed unless authenticated
 
+    # --- Restore Previous Messages (Optional: session only) ---
+    if not st.session_state.messages:
+        st.session_state.messages = []
+
+    # --- Route Pages ---
     page = st.sidebar.radio("Navigate", ["🤖 Chatbot", "📄 Instructions", "⚙️ Settings"])
     if page == "🤖 Chatbot":
         display_chat()
@@ -264,6 +281,3 @@ def main():
         instructions_page()
     elif page == "⚙️ Settings":
         settings_page()
-
-if __name__ == "__main__":
-    main()

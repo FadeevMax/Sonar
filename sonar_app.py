@@ -42,7 +42,6 @@ If full information is not available about the strain (e.g., it's a new hybrid o
 - Use **bullet points or line breaks** where appropriate for readability.
 - If a data point is **unknown or unavailable**, state: Unknown.
 """
-
 MODELS = [
     "sonar",
     "sonar-pro",
@@ -51,95 +50,34 @@ MODELS = [
     "mistral-7b-instruct",
 ]
 
-CONVERSATIONS_KEY_TEMPLATE = "conversations_{user_id}"
+# ------------------------------------------------------------
+# 🗂  PERSISTENCE HELPERS  (Browser local‑storage via streamlit_local_storage)
+# ------------------------------------------------------------
 
-# ----------------------- Helpers for Conversation Persistence -------------------------
-
-def load_conversations(local_storage, user_id):
-    """Load all conversations for a given user from LocalStorage."""
-    key = CONVERSATIONS_KEY_TEMPLATE.format(user_id=user_id)
+def _load_conversations(local_store: LocalStorage) -> list[dict]:
+    """Return a list of stored conversations [{id,title,messages:[{role,content}]}]."""
     try:
-        raw = local_storage.getItem(key)
-        if raw:
-            return json.loads(raw)
+        raw = local_store.getItem("conversations") or "[]"
+        return json.loads(raw)
     except Exception:
-        pass
-    return []
+        return []
 
-
-def save_conversations(local_storage, user_id, conversations):
-    """Save conversations list back to LocalStorage."""
-    key = CONVERSATIONS_KEY_TEMPLATE.format(user_id=user_id)
+def _save_conversations(local_store: LocalStorage, conversations: list[dict]) -> None:
+    """Persist conversations list back to the browser."""
     try:
-        local_storage.setItem(key, json.dumps(conversations))
+        local_store.setItem("conversations", json.dumps(conversations))
     except Exception:
-        pass
+        pass  # Best‑effort only – if it fails we still keep runtime state
 
+# ------------------------------------------------------------
+# 🔑  PERPLEXITY API WRAPPER
+# ------------------------------------------------------------
 
-def ensure_current_conversation():
-    """Ensure a current conversation exists and keep session_state in sync."""
-    if "current_conv_id" not in st.session_state:
-        # No conversation selected yet -> pick the first one
-        if st.session_state.conversations:
-            st.session_state.current_conv_id = st.session_state.conversations[0]["id"]
-        else:
-            new_conv_id = str(uuid.uuid4())
-            st.session_state.conversations = [{
-                "id": new_conv_id,
-                "title": "New Conversation",
-                "messages": [],
-            }]
-            st.session_state.current_conv_id = new_conv_id
-    # Sync st.session_state.messages with the selected conversation
-    current_conv = next(c for c in st.session_state.conversations if c["id"] == st.session_state.current_conv_id)
-    st.session_state.messages = current_conv["messages"]
+def call_perplexity_api(messages: list[dict], model: str, api_key: str | None):
+    if not api_key:
+        st.error("⛔ Please provide a Perplexity API key in Settings → API Key")
+        return None
 
-
-# ----------------------- Initialization -------------------------
-
-def get_persistent_user_id(local_storage):
-    try:
-        user_id = local_storage.getItem("user_id")
-        if not user_id:
-            user_id = str(uuid.uuid4())
-            local_storage.setItem("user_id", user_id)
-        return user_id
-    except Exception:
-        return str(uuid.uuid4())
-
-
-def initialize_session_state(local_storage):
-    # First get / set user_id so we can load their stored conversations
-    if "user_id" not in st.session_state:
-        st.session_state.user_id = get_persistent_user_id(local_storage)
-
-    # Load any previously saved conversations (only once per session)
-    if "conversations" not in st.session_state:
-        st.session_state.conversations = load_conversations(local_storage, st.session_state.user_id)
-
-    # Default-level session keys
-    defaults = {
-        "authenticated": False,
-        "api_key": None,
-        "custom_instructions": {"Default": DEFAULT_INSTRUCTIONS},
-        "current_instruction_name": "Default",
-        "state_loaded": True,
-        "model": MODELS[0],
-        "instructions": DEFAULT_INSTRUCTIONS,
-        "instruction_edit_mode": "view",
-        "sidebar_expanded": True,
-    }
-    for key, val in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
-
-    # Guarantee there is a current conversation in place
-    ensure_current_conversation()
-
-
-# ----------------------- API Handler -------------------------
-
-def call_perplexity_api(messages, model, api_key):
     url = "https://api.perplexity.ai/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -154,230 +92,186 @@ def call_perplexity_api(messages, model, api_key):
         "stream": False,
     }
     try:
-        response = requests.post(url, json=payload, headers=headers)
-        if response.status_code == 400:
-            st.error("❌ Bad request: The API payload may be malformed. Check formatting and field names.")
-            st.json(response.json())
-            return None
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
-        st.error(f"API Error: {str(e)}")
+        st.error(f"API Error → {e}")
         return None
 
+# ------------------------------------------------------------
+# 🔄  SESSION INITIALISATION
+# ------------------------------------------------------------
 
-# ----------------------- UI Components -------------------------
+def init_session_state():
+    defaults = {
+        "authenticated": False,
+        "api_key": None,
+        "model": MODELS[0],
+        "instructions": DEFAULT_INSTRUCTIONS,
+        "custom_instructions": {"Default": DEFAULT_INSTRUCTIONS},
+        "current_instruction_name": "Default",
+        # Conversation handling
+        "conversations": [],       # loaded from local‑storage
+        "current_conv_id": None,   # uuid4 string of selected conversation
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-def sidebar_conversation_selector(localS):
-    """Sidebar component to list & switch between conversations, create new ones, or delete."""
-    st.sidebar.subheader("💬 Conversations")
+# ------------------------------------------------------------
+# 📑  CONVERSATION UTILITIES
+# ------------------------------------------------------------
 
-    # Titles for listbox
-    titles = [conv["title"] for conv in st.session_state.conversations]
-    # Keep mapping title to id (not unique if user reuses title, but ok for simple use)
-    selected_idx = 0
-    if st.session_state.current_conv_id:
-        for i, c in enumerate(st.session_state.conversations):
-            if c["id"] == st.session_state.current_conv_id:
-                selected_idx = i
-                break
-
-    selected_title = st.sidebar.selectbox("Select a conversation", titles, index=selected_idx, key="conv_select")
-
-    # Update current conversation if changed
-    selected_conv = st.session_state.conversations[titles.index(selected_title)]
-    if selected_conv["id"] != st.session_state.current_conv_id:
-        st.session_state.current_conv_id = selected_conv["id"]
-        st.session_state.messages = selected_conv["messages"]
-
-    # Buttons for new conversation or delete
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        if st.button("➕ New"):
-            new_id = str(uuid.uuid4())
-            st.session_state.conversations.insert(0, {"id": new_id, "title": "New Conversation", "messages": []})
-            st.session_state.current_conv_id = new_id
-            st.session_state.messages = []
-            save_conversations(localS, st.session_state.user_id, st.session_state.conversations)
-            st.experimental_rerun()
-    with col2:
-        if st.button("🗑️ Delete"):
-            # Delete current conversation
-            st.session_state.conversations = [c for c in st.session_state.conversations if c["id"] != st.session_state.current_conv_id]
-            # After delete, reset current to first or create new
-            if st.session_state.conversations:
-                st.session_state.current_conv_id = st.session_state.conversations[0]["id"]
-                st.session_state.messages = st.session_state.conversations[0]["messages"]
-            else:
-                new_id = str(uuid.uuid4())
-                st.session_state.conversations = [{"id": new_id, "title": "New Conversation", "messages": []}]
-                st.session_state.current_conv_id = new_id
-                st.session_state.messages = []
-            save_conversations(localS, st.session_state.user_id, st.session_state.conversations)
-            st.experimental_rerun()
+def _ensure_conversation(localS: LocalStorage):
+    """Guarantee that there is at least one conversation and a selected id."""
+    if not st.session_state.conversations:
+        new_id = str(uuid.uuid4())
+        st.session_state.conversations = [{"id": new_id, "title": "New Conversation", "messages": []}]
+        _save_conversations(localS, st.session_state.conversations)
+    if st.session_state.current_conv_id is None:
+        st.session_state.current_conv_id = st.session_state.conversations[0]["id"]
 
 
+def _get_current_conv():
+    for c in st.session_state.conversations:
+        if c["id"] == st.session_state.current_conv_id:
+            return c
+    return None
 
-def display_chat(localS):
+# ------------------------------------------------------------
+# 🖥️  UI COMPONENTS
+# ------------------------------------------------------------
+
+def sidebar_conversations(localS: LocalStorage):
+    st.sidebar.header("📚 Conversations")
+    titles = [c["title"] if c["title"] else "Untitled" for c in st.session_state.conversations]
+    selected_index = next((i for i, c in enumerate(st.session_state.conversations)
+                           if c["id"] == st.session_state.current_conv_id), 0)
+    choice = st.sidebar.radio("Select", titles, index=selected_index, key="conv_radio")
+    st.session_state.current_conv_id = st.session_state.conversations[titles.index(choice)]["id"]
+
+    if st.sidebar.button("➕  New Conversation"):
+        new_id = str(uuid.uuid4())
+        st.session_state.conversations.insert(0, {"id": new_id, "title": "New Conversation", "messages": []})
+        st.session_state.current_conv_id = new_id
+        _save_conversations(localS, st.session_state.conversations)
+        st.rerun()
+
+
+def chat_page(localS: LocalStorage):
+    conv = _get_current_conv()
+    if conv is None:
+        st.error("Conversation not found.")
+        return
+
     st.title("🤖 AI Research Assistant")
-    st.subheader(f"Model: {st.session_state.model}")
+    st.caption(f"Model → {st.session_state.model}")
 
-    # Display past messages
-    for msg in st.session_state.messages:
+    # Display history
+    for msg in conv["messages"]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Chat input
-    if user_input := st.chat_input("Ask your question here..."):
-        # Append user message locally
-        st.session_state.messages.append({"role": "user", "content": user_input})
+    # User input
+    if user_input := st.chat_input("Ask your question..."):
+        conv["messages"].append({"role": "user", "content": user_input})
 
-        # Update title if this is the first user message in the conversation
-        current_conv = next(c for c in st.session_state.conversations if c["id"] == st.session_state.current_conv_id)
-        if current_conv["title"] in ("New Conversation", ""):
-            current_conv["title"] = user_input[:50]  # Truncate for sidebar
+        # Rename conversation if it's still using the default title
+        if conv["title"] == "New Conversation":
+            conv["title"] = user_input.strip().split("\n")[0][:40]
 
-        # Build API messages
-        api_messages = [
-            {"role": "system", "content": st.session_state.instructions}
-        ] + st.session_state.messages
-
-        # Display user message
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Call API
-        with st.spinner("Thinking and researching..."):
-            response = call_perplexity_api(api_messages, st.session_state.model, st.session_state.api_key)
+        api_messages = ([{"role": "system", "content": st.session_state.instructions}] + conv["messages"])
+        with st.spinner("Thinking & researching ..."):
+            assistant_reply = call_perplexity_api(api_messages, st.session_state.model, st.session_state.api_key)
 
-        if response:
-            # Append assistant message
-            st.session_state.messages.append({"role": "assistant", "content": response})
+        if assistant_reply:
+            conv["messages"].append({"role": "assistant", "content": assistant_reply})
             with st.chat_message("assistant"):
-                st.markdown(response)
-        else:
-            st.error("❌ Failed to get response from Perplexity API")
+                st.markdown(assistant_reply)
 
-        # Save changes to localStorage
-        current_conv["messages"] = st.session_state.messages
-        save_conversations(localS, st.session_state.user_id, st.session_state.conversations)
+        # Persist updated conversations
+        _save_conversations(localS, st.session_state.conversations)
 
 
 def instructions_page():
     st.header("📄 Instructions Manager")
-    if st.session_state.instruction_edit_mode == "create":
-        with st.form("new_instruction_form"):
-            name = st.text_input("Instruction Name")
-            content = st.text_area("Content", height=300)
-            if st.form_submit_button("Save"):
-                if name and content and name not in st.session_state.custom_instructions:
-                    st.session_state.custom_instructions[name] = content
-                    st.session_state.current_instruction_name = name
-                    st.session_state.instructions = content
-                    st.session_state.instruction_edit_mode = "view"
-                    st.success(f"✅ Saved '{name}'")
-                    st.rerun()
-        if st.button("Cancel"):
-            st.session_state.instruction_edit_mode = "view"
-            st.rerun()
-    else:
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            options = list(st.session_state.custom_instructions.keys())
-            selected_index = options.index(st.session_state.current_instruction_name)
-            selected = st.selectbox("Select Instruction", options, index=selected_index)
-            st.session_state.current_instruction_name = selected
-            st.session_state.instructions = st.session_state.custom_instructions[selected]
-        with col2:
-            st.write("")  # Spacer
-            st.write("")  # Spacer
-            if st.button("New Instruction"):
-                st.session_state.instruction_edit_mode = "create"
-                st.rerun()
+    names = list(st.session_state.custom_instructions.keys())
+    idx = names.index(st.session_state.current_instruction_name)
+    selected = st.selectbox("Select", names, index=idx)
+    st.session_state.current_instruction_name = selected
+    st.session_state.instructions = st.session_state.custom_instructions[selected]
 
-        content_key = f"instruction_content_{selected}"
-        edited_content = st.text_area(
-            "Instruction Content",
-            value=st.session_state.custom_instructions[selected],
-            height=300,
-            disabled=(selected == "Default"),
-            key=content_key,
-        )
-
-        if selected != "Default":
-            col1_btn, col2_btn, _ = st.columns([1, 1, 5])
-            with col1_btn:
-                if st.button("Save Changes"):
-                    st.session_state.custom_instructions[selected] = edited_content
-                    st.success("✅ Changes saved")
-                    st.rerun()
-            with col2_btn:
-                if st.button("Delete"):
-                    del st.session_state.custom_instructions[selected]
-                    st.session_state.current_instruction_name = "Default"
-                    st.session_state.instructions = st.session_state.custom_instructions["Default"]
-                    st.success("✅ Deleted")
-                    st.rerun()
+    edited = st.text_area("Instruction Content", st.session_state.instructions, height=300,
+                          key="instr_edit")
+    if st.button("Save"):
+        st.session_state.custom_instructions[selected] = edited
+        st.session_state.instructions = edited
+        st.success("Saved 📝")
 
 
-def settings_page(localS):
+def settings_page():
     st.header("⚙️ Settings")
-    selected = st.selectbox("Choose a model", MODELS, index=MODELS.index(st.session_state.model))
-    if selected != st.session_state.model:
-        st.session_state.model = selected
-        st.success(f"✅ Switched to {selected}")
+    model_choice = st.selectbox("Model", MODELS, index=MODELS.index(st.session_state.model))
+    st.session_state.model = model_choice
 
-    if st.button("Clear Current Conversation"):
-        # Clears only the current conversation's messages
-        current_conv = next(c for c in st.session_state.conversations if c["id"] == st.session_state.current_conv_id)
-        current_conv["messages"] = []
-        st.session_state.messages = []
-        save_conversations(localS, st.session_state.user_id, st.session_state.conversations)
-        st.success("✅ Cleared chat")
+    key = st.text_input("Perplexity API Key", type="password", value=st.session_state.api_key or "")
+    if key and key != st.session_state.api_key:
+        st.session_state.api_key = key
+        st.success("API key updated ✅")
 
+    if st.button("Clear current conversation"):
+        conv = _get_current_conv()
+        if conv:
+            conv["messages"] = []
+            _save_conversations(LocalStorage(), st.session_state.conversations)
+            st.rerun()
 
-# ----------------------- Main -------------------------
+# ------------------------------------------------------------
+# 🚀  MAIN
+# ------------------------------------------------------------
 
 def main():
     st.set_page_config("AI Research Assistant", "🤖", layout="wide")
     localS = LocalStorage()
 
-    # Initialize session & load data
-    initialize_session_state(localS)
+    init_session_state()
 
-    # ----------------------- Login Screen -----------------------
-    if not st.session_state.authenticated:
-        st.title("🔐 Login")
-        key_input = st.text_input("Enter Perplexity API key or password", type="password")
-        if st.button("Login"):
-            if key_input and key_input.startswith("pplx-"):
-                st.session_state.api_key = key_input
-                st.session_state.authenticated = True
-                st.success("✅ Logged in with API key")
-                st.experimental_rerun()
-            elif key_input == st.secrets.get("PASSWORD"):
-                st.session_state.api_key = st.secrets["PERPLEXITY_API_KEY"]
-                st.session_state.authenticated = True
-                st.success("✅ Logged in with default key")
-                st.experimental_rerun()
-            else:
-                st.error("❌ Invalid key or password")
-        with st.expander("Where to find your API key"):
-            st.markdown("Go to the [Perplexity AI Website](https://www.perplexity.ai/), log in to your account, navigate to API settings, and generate a new key.")
-        return  # Don’t proceed unless authenticated
+    # Load stored conversations once per session
+    if not st.session_state.conversations:
+        st.session_state.conversations = _load_conversations(localS)
 
-    # ----------------------- Sidebar -----------------------
-    sidebar_conversation_selector(localS)
-    page = st.sidebar.radio("Navigate", ["🤖 Chatbot", "📄 Instructions", "⚙️ Settings"])
+    _ensure_conversation(localS)
 
-    if page == "🤖 Chatbot":
-        display_chat(localS)
+    # --- Sidebar content (login & conv list) ---
+    with st.sidebar:
+        if not st.session_state.authenticated:
+            st.subheader("🔐 Login")
+            pw = st.text_input("Enter Perplexity API key", type="password")
+            if st.button("Login"):
+                if pw and pw.startswith("pplx-"):
+                    st.session_state.api_key = pw
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Invalid key – must start with 'pplx-' 🛑")
+            st.stop()
+
+        sidebar_conversations(localS)
+        st.markdown("---")
+        page = st.radio("Nav", ["🤖 Chat", "📄 Instructions", "⚙️ Settings"], key="nav_radio")
+
+    # --- Main area ---
+    if page == "🤖 Chat":
+        chat_page(localS)
     elif page == "📄 Instructions":
         instructions_page()
     elif page == "⚙️ Settings":
-        settings_page(localS)
+        settings_page()
 
 
-# ----------------------- Run -------------------------
 if __name__ == "__main__":
     main()

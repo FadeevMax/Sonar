@@ -1,13 +1,16 @@
 import streamlit as st
+from streamlit_shadcn_ui import input, slider, switch, button, card, tabs
 import time
 import os
 import uuid
-from datetime import datetime
 import json
+from datetime import datetime
 from streamlit_local_storage import LocalStorage
 import requests
 
-# Default instructions for your assistant
+# Load logo if available
+LOGO_PATH = "assets/logo.png"  # You can change this to a URL too
+
 DEFAULT_INSTRUCTIONS = """You are a cannabis industry research assistant powered by Perplexity AI tools. Your role is to help report on strain-specific data points. You will be provided with the name of a cannabis strain. Your task is to return a structured report containing 14 specific data fields, all in plain text Markdown format, as outlined below.
 
 ### If the strain is well-known
@@ -41,7 +44,7 @@ If full information is not available about the strain (e.g., it's a new hybrid o
 
 - Professional, neutral, data-focused.
 - Use **bullet points or line breaks** where appropriate for readability.
-- If a data point is **unknown or unavailable**, state: `Unknown`.
+- If a data point is **unknown or unavailable**, state: Unknown.
 
 ---
 **(Example for a Successful Primary Search)**
@@ -103,16 +106,10 @@ If full information is not available about the strain (e.g., it's a new hybrid o
 **(Example for a Fallback Scenario)**
 
 Insufficient data for strain 'Galactic Runtz'. Contact web@headquarters.co"""
-
 MODELS = [
-  "sonar",
-  "sonar-pro",
-  "sonar-deep-research",
-  "sonar-reasoning-pro",
-  "mistral-7b-instruct"
+    "sonar", "sonar-pro", "sonar-deep-research", "sonar-reasoning-pro", "mistral-7b-instruct"
 ]
 
-# ----------------------- Initialization -------------------------
 def get_persistent_user_id(local_storage):
     try:
         user_id = local_storage.getItem("user_id")
@@ -139,25 +136,17 @@ def initialize_session_state():
         if key not in st.session_state:
             st.session_state[key] = val
 
-# ----------------------- API Handler -------------------------
 def call_perplexity_api(messages, model, api_key):
     url = "https://api.perplexity.ai/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": 4000,
-        "temperature": 0.2,
-        "top_p": 0.9,
-        "stream": False
+        "model": model, "messages": messages, "max_tokens": 4000,
+        "temperature": 0.2, "top_p": 0.9, "stream": False
     }
     try:
         response = requests.post(url, json=payload, headers=headers)
         if response.status_code == 400:
-            st.error("❌ Bad request: The API payload may be malformed. Check formatting and field names.")
+            st.error("❌ Bad request: malformed payload.")
             st.json(response.json())
             return None
         response.raise_for_status()
@@ -166,60 +155,90 @@ def call_perplexity_api(messages, model, api_key):
         st.error(f"API Error: {str(e)}")
         return None
 
-# ----------------------- UI Components -------------------------
+# ---------------------- UI COMPONENTS -----------------------
+
+def style_app():
+    st.markdown("""
+    <style>
+        html, body, [class*="st-"] {
+            background-color: #0f0f0f;
+            color: #f4f4f4;
+        }
+        .stButton>button {
+            background-color: #ffffff10;
+            color: #f4f4f4;
+            border: 1px solid #666;
+        }
+        .stTextInput>div>input, .stTextArea>div>textarea {
+            background-color: #1a1a1a;
+            color: #f4f4f4;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+def render_logo():
+    if os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, width=140)
+    else:
+        st.markdown("### 🧪 AI Research Assistant")
+
 def display_chat():
-    st.title("🤖 AI Research Assistant")
-    st.subheader(f"Model: {st.session_state.model}")
+    render_logo()
+    st.subheader(f"💬 Model: `{st.session_state.model}`")
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-    if user_input := st.chat_input("Ask your question here..."):
+
+    if user_input := st.chat_input("Ask your strain question..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.markdown(user_input)
+        with st.chat_message("user"): st.markdown(user_input)
+
         api_messages = [{"role": "system", "content": st.session_state.instructions}] + st.session_state.messages
-        with st.spinner("Thinking and researching..."):
+        with st.spinner("Researching..."):
             response = call_perplexity_api(api_messages, st.session_state.model, st.session_state.api_key)
+
         if response:
             st.session_state.messages.append({"role": "assistant", "content": response})
             with st.chat_message("assistant"):
-                st.markdown(response)
+                card("Strain Report", response, key=str(uuid.uuid4()))
         else:
-            st.error("❌ Failed to get response from Perplexity API")
+            st.error("❌ No response received.")
 
 def instructions_page():
-    st.header("📄 Instructions Manager")
+    st.header("📄 Instruction Manager")
+    col1, col2 = st.columns([3, 1])
+    options = list(st.session_state.custom_instructions.keys())
+
+    with col1:
+        selected = st.selectbox("Choose instruction", options, index=options.index(st.session_state.current_instruction_name))
+        st.session_state.current_instruction_name = selected
+
+    with col2:
+        if st.button("➕ New"):
+            st.session_state.instruction_edit_mode = "create"
+            st.rerun()
+
     if st.session_state.instruction_edit_mode == "create":
         with st.form("new_instruction_form"):
             name = st.text_input("Instruction Name")
-            content = st.text_area("Content", height=300)
+            content = st.text_area("Paste instruction", height=300)
             if st.form_submit_button("Save"):
-                if name and content and name not in st.session_state.custom_instructions:
+                if name and content:
                     st.session_state.custom_instructions[name] = content
                     st.session_state.current_instruction_name = name
                     st.session_state.instructions = content
                     st.session_state.instruction_edit_mode = "view"
-                    st.success(f"✅ Saved '{name}'")
+                    st.success("✅ Saved.")
                     st.rerun()
         if st.button("Cancel"):
             st.session_state.instruction_edit_mode = "view"
             st.rerun()
     else:
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            options = list(st.session_state.custom_instructions.keys())
-            selected = st.selectbox("Select Instruction", options, index=options.index(st.session_state.current_instruction_name))
-            st.session_state.current_instruction_name = selected
-        with col2:
-            if st.button("New Instruction"):
-                st.session_state.instruction_edit_mode = "create"
-                st.rerun()
-        st.text_area("Instruction Content", value=st.session_state.custom_instructions[selected], height=300, disabled=(selected == "Default"))
+        st.text_area("Instruction Preview", value=st.session_state.custom_instructions[selected], height=300, disabled=True)
         if selected != "Default":
-            if st.button("Save Changes"):
+            if st.button("📝 Save"):
                 st.session_state.custom_instructions[selected] = st.session_state.custom_instructions[selected]
-                st.success("✅ Changes saved")
-            if st.button("Delete Instruction"):
+            if st.button("🗑️ Delete"):
                 del st.session_state.custom_instructions[selected]
                 st.session_state.current_instruction_name = "Default"
                 st.success("✅ Deleted")
@@ -227,17 +246,21 @@ def instructions_page():
 
 def settings_page():
     st.header("⚙️ Settings")
-    selected = st.selectbox("Choose a model", MODELS, index=MODELS.index(st.session_state.model))
-    if selected != st.session_state.model:
-        st.session_state.model = selected
-        st.success(f"✅ Switched to {selected}")
-    if st.button("Clear Conversation"):
+    st.write("Select your preferred LLM and clear chat memory.")
+    model = st.selectbox("Choose a model", MODELS, index=MODELS.index(st.session_state.model))
+    if model != st.session_state.model:
+        st.session_state.model = model
+        st.success("✅ Model updated.")
+    if st.button("🧹 Clear Conversation"):
         st.session_state.messages = []
-        st.success("✅ Cleared chat")
+        st.success("✅ Chat reset.")
 
-# ----------------------- Main -------------------------
+# ---------------------- MAIN APP -----------------------------
+
 def main():
     st.set_page_config("AI Research Assistant", "🤖", layout="wide")
+    style_app()
+
     localS = LocalStorage()
     st.session_state.user_id = get_persistent_user_id(localS)
     initialize_session_state()
@@ -249,12 +272,11 @@ def main():
             if key.startswith("pplx-"):
                 st.session_state.api_key = key
                 st.session_state.authenticated = True
-                st.success("✅ Authenticated")
+                st.success("✅ Logged in.")
                 st.rerun()
             else:
-                st.error("❌ Invalid API key")
-        with st.expander("Where to find your API key"):
-            st.markdown("[Perplexity API](https://www.perplexity.ai/) → login → generate key")
+                st.error("❌ Invalid API Key.")
+        st.markdown("Don't have one? [Get your Perplexity API Key](https://www.perplexity.ai)")
         return
 
     page = st.sidebar.radio("Navigate", ["🤖 Chatbot", "📄 Instructions", "⚙️ Settings"])

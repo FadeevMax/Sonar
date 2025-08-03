@@ -1,0 +1,29 @@
+{
+  "name": "strain-search",
+  "version": "1.0.0",
+  "description": "Cannabis strain research assistant powered by Perplexity AI",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo 'Static site - no build process needed'",
+    "start": "npx serve .",
+    "deploy": "vercel --prod"
+  },
+  "keywords": [
+    "cannabis",
+    "strain",
+    "research",
+    "ai",
+    "chatbot",
+    "perplexity"
+  ],
+  "author": "FadeevMax",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FadeevMax/Strain_Researcher.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

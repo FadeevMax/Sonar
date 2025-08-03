@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strain Search - Cannabis Research Assistant</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo-container">
+                <img src="https://api.builder.io/api/v1/image/assets/TEMP/82e158cd367c16a7b4a51dfb3b5efd30b9fd8e1a?width=264" alt="Strain Search Logo" class="logo">
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <h1 class="main-title">Strain search time?</h1>
+            
+            <!-- Search Form -->
+            <div class="search-container">
+                <form id="search-form" class="search-form">
+                    <div class="search-input-container">
+                        <input 
+                            type="text" 
+                            id="strain-input" 
+                            class="search-input" 
+                            placeholder="Type in a strain name..."
+                            autocomplete="off"
+                        >
+                        <button type="submit" class="search-button">
+                            <svg class="search-icon send-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M13.5 3L20.5 21L13.5 17.5L6.5 21L13.5 3Z" fill="currentColor"/>
+                            </svg>
+                            <svg class="search-icon arrow-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M5 12L19 12M12 5L19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Chat Container -->
+            <div class="chat-container" id="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    <!-- Welcome message -->
+                    <div class="message bot-message welcome-message">
+                        <div class="message-content">
+                            <div class="message-text">
+                                👋 Welcome to Strain Search! I'm your cannabis research assistant. 
+                                I can help you find information about different cannabis strains, their effects, 
+                                THC/CBD levels, and more. What strain would you like to learn about?
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Typing indicator -->
+                <div class="typing-indicator" id="typing-indicator">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span class="typing-text">Searching strains...</span>
+                </div>
+            </div>
+
+            <!-- Quick suggestions -->
+            <div class="suggestions-container" id="suggestions-container">
+                <div class="suggestions-title">Popular searches:</div>
+                <div class="suggestions">
+                    <button class="suggestion-btn" data-strain="OG Kush">OG Kush</button>
+                    <button class="suggestion-btn" data-strain="Blue Dream">Blue Dream</button>
+                    <button class="suggestion-btn" data-strain="White Widow">White Widow</button>
+                    <button class="suggestion-btn" data-strain="Sour Diesel">Sour Diesel</button>
+                    <button class="suggestion-btn" data-strain="Girl Scout Cookies">Girl Scout Cookies</button>
+                    <button class="suggestion-btn" data-strain="Purple Haze">Purple Haze</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2025 Strain Search. For educational and research purposes only.</p>
+        </footer>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Researching strain information...</p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
